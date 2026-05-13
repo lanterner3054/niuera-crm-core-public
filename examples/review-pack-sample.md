@@ -2,6 +2,8 @@
 
 This is an example format for sharing private repository changes with an external AI reviewer. It is a public-safe template only and must not contain production data.
 
+Use this template by replacing each example item with sanitized excerpts from the public repository or with placeholders. The reviewer should not need access to production servers, MCP resources, private automation tools, or private datasets to complete the review.
+
 ## Review scope
 
 Review the sanitized materials for:
@@ -35,6 +37,7 @@ Example changed files in a sanitized pack may look like this:
 - `scripts/example_check.py` — example validation logic with fake inputs.
 - `docs/example-operator-note.md` — public-safe operator guidance excerpt.
 - `examples/example_payload.json` — placeholder payload with fake IDs and names.
+- `src/example_module.py` — representative code excerpt with all secrets and live endpoints removed.
 
 Use fake paths or public repository paths only. Do not include private absolute paths, production host paths, or private repository locations.
 
@@ -57,6 +60,8 @@ Please review the included sanitized materials and answer:
 3. Is input validation missing or too weak for files, environment variables, IDs, URLs, or user-provided values?
 4. Does any code or instruction allow overbroad file access, network access, environment access, or repository access?
 5. Is the documentation clear enough for a reviewer to avoid production systems and use only sanitized materials?
+
+For each finding, include the file path or excerpt label, the risk level, the reason it matters, and a suggested public-safe remediation. If no issue is found, say so explicitly.
 
 ## Reviewer restrictions
 
