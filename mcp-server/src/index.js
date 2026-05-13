@@ -10,7 +10,7 @@ import { registerFeishuTools } from './tools/feishu.js';
 import { registerSystemTools } from './tools/system.js';
 
 const PORT = process.env.MCP_PORT || 3001;
-const API_TOKEN = process.env.MCP_API_TOKEN || '';
+const API_TOKEN = process.env.MCP_API_TOKEN;
 
 function createServer() {
   const server = new McpServer({
@@ -32,10 +32,43 @@ app.use(express.json());
 
 const transports = {};
 
+function isValidBearerToken(authHeader) {
+  const expectedToken = API_TOKEN;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return false;
+  }
+
+  const suppliedToken = authHeader.slice('Bearer '.length).trim();
+  if (!suppliedToken || suppliedToken.length !== expectedToken.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(
+    Buffer.from(suppliedToken),
+    Buffer.from(expectedToken),
+  );
+}
+
+function requireMcpAuth(req, res, next) {
+  if (!API_TOKEN) {
+    res.status(503).json({ error: 'server is not configured' });
+    return;
+  }
+
+  if (!isValidBearerToken(req.get('authorization'))) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  next();
+}
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', server: 'niuera-mcp', version: '1.0.0' });
 });
+
+app.use('/mcp', requireMcpAuth);
 
 // MCP POST endpoint
 app.post('/mcp', async (req, res) => {
