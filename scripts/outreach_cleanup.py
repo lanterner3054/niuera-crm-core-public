@@ -10,48 +10,30 @@ import urllib.request
 
 PLANNED_CHANGES = [
     {
-        "group": "A类：人名当公司 → 已跳过",
+        "group": "Example A: invalid prospect records",
         "updates": [
-            ("PR012", "Aamir Javed", {"status": "已跳过"}),
-            ("PR081", "Martin Richell", {"status": "已跳过"}),
-            ("PR086", "Niccolo Bersasi", {"status": "已跳过"}),
-            ("PR087", "Nicola Kaiser", {"status": "已跳过"}),
-            ("PR099", "Razvan Batbosu", {"status": "已跳过"}),
-            ("PR109", "Scott Mark", {"status": "已跳过"}),
-            ("PR115", "Sri s", {"status": "已跳过"}),
-            ("PR122", "Uditha Kasun", {"status": "已跳过"}),
-            ("PR142", "srinath krishnanandam", {"status": "已跳过"}),
-            ("PR143", "ulrich markus", {"status": "已跳过"}),
+            ("PR001", "Example Person A", {"status": "已跳过"}),
+            ("PR002", "Example Person B", {"status": "已跳过"}),
         ],
     },
     {
-        "group": "C类：重复公司 → 已跳过",
+        "group": "Example B: duplicate company records",
         "updates": [
-            ("PR028", "CutPower dup PR005", {"status": "已跳过"}),
-            ("PR090", "PlusCharge dup PR002", {"status": "已跳过"}),
-            ("PR093", "Powerbox.one dup PR003", {"status": "已跳过"}),
-            ("PR022", "Carico dup PR008", {"status": "已跳过"}),
-            ("PR114", "Spedition Oppel dup PR007", {"status": "已跳过"}),
-            ("PR139", "electris dup PR004", {"status": "已跳过"}),
+            ("PR003", "Example Company Duplicate", {"status": "已跳过"}),
+            ("PR004", "Example Charging Co duplicate", {"status": "已跳过"}),
         ],
     },
     {
-        "group": "D类：垃圾数据 → 已跳过",
+        "group": "Example C: missing country enrichment",
         "updates": [
-            ("PR135", "dickphone", {"status": "已跳过"}),
+            ("PR005", "Example Energy Ltd", {"country": "Germany"}),
+            ("PR006", "Example Mobility GmbH", {"country": "Netherlands"}),
         ],
     },
     {
-        "group": "B类：补国家",
+        "group": "Example D: field correction",
         "updates": [
-            ("PR024", "ChargeMakers", {"country": "Netherlands"}),
-            ("PR037", "EASYCNC.IT", {"country": "Italy"}),
-        ],
-    },
-    {
-        "group": "D类：修正 PR014 错位字段",
-        "updates": [
-            ("PR014", "Ampeco", {"country": "Bulgaria", "status": "待处理", "priority": "高"}),
+            ("PR007", "Example Power Systems", {"country": "Italy", "status": "待处理", "priority": "高"}),
         ],
     },
 ]

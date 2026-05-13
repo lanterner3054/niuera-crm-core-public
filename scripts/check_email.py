@@ -21,7 +21,7 @@ IMAP_PORT = int(os.getenv("NIUERA_IMAP_PORT", "993"))
 EMAIL_USER = require_env("NIUERA_IMAP_USER")
 EMAIL_PASS = require_env("NIUERA_IMAP_PASS")
 WEBHOOK_URL = require_env("NIUERA_EMAIL_WEBHOOK_URL")
-PROCESSED_FILE = os.getenv("NIUERA_PROCESSED_EMAILS_FILE", "/home/ubuntu/processed_emails.txt")
+PROCESSED_FILE = os.getenv("NIUERA_PROCESSED_EMAILS_FILE", "/tmp/processed_emails.txt")
 
 
 def decode_str(s):
