@@ -1,0 +1,10 @@
+# Default owner for the entire repository
+* @lanterner3054
+
+# Sensitive directories and security-related files
+scripts/ @lanterner3054
+mcp-server/ @lanterner3054
+.github/ @lanterner3054
+docs/security-policy.md @lanterner3054
+docs/claude-review-prompt.md @lanterner3054
+.env.example @lanterner3054
