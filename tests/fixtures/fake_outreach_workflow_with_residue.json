@@ -13,20 +13,20 @@
       "name": "Manual Trigger",
       "type": "n8n-nodes-base.manualTrigger",
       "parameters": {
-        "webhookUrl": "dummy-webhook.example.invalid/path/REDACTED",
+        "webhookUrl": "https://example.invalid/webhook/REDACTED-public-fixture-path",
         "ownerEmail": "reviewer@example.invalid",
         "serverIp": "192.0.2.10",
-        "tableId": "tbl_dummy_public_fixture",
-        "appId": "cli_dummy_public_fixture",
-        "appKey": "key_dummy_public_fixture",
-        "opaqueId": "rec_dummy_public_fixture",
+        "tableId": "tblDummyPublicFixture123",
+        "appId": "cli_DummyPublicFixture123",
+        "appKey": "app-DummyPublicFixture123",
+        "opaqueId": "dummyopaqueidentifier12345678901234567890",
         "customerName": "Example Fixture Customer",
         "contactName": "Example Fixture Contact",
         "payload": {
           "subject": "Public fixture payload",
           "body": "REDACTED"
         },
-        "token": "dummy-token-public-fixture"
+        "authorization": "Bearer dummy-token-public-fixture"
       },
       "credentials": {
         "httpHeaderAuth": {
