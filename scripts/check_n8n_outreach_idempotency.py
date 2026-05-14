@@ -16,15 +16,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-REQUIRED_NODE_NAMES = [
+NATIVE_IF_TYPE = "n8n-nodes-base.if"
+
+DEFAULT_REQUIRED_NODE_NAMES = [
     "Lock Decision",
     "IF Should Attempt Lock",
-    "更新公司状态为发送中",
-    "重新读取公司记录",
+    "Update record to sending",
+    "Re-read record",
     "Verify Lock",
-    "IF Lock Confirmed",
     "No-op Response",
 ]
+
+DEFAULT_LOCK_GATE_PATTERN = r"^IF .*Lock Confirmed$|^IF Lock Confirmed$"
+DEFAULT_LOCK_ATTEMPT_NODE = "IF Should Attempt Lock"
 
 SEND_PATTERNS = [
     re.compile(r"发送开发信", re.I),
@@ -36,8 +40,9 @@ SEND_PATTERNS = [
 
 WRITE_PATTERNS = [
     re.compile(r"写入发送记录", re.I),
-    re.compile(r"更新公司状态", re.I),
-    re.compile(r"更新联系人状态", re.I),
+    re.compile(r"update.*record.*sending", re.I),
+    re.compile(r"update.*company.*status", re.I),
+    re.compile(r"update.*contact.*status", re.I),
     re.compile(r"update.*status", re.I),
     re.compile(r"send\s*log", re.I),
 ]
@@ -48,6 +53,9 @@ SENSITIVE_PATTERNS = {
     "webhook path": re.compile(r"(?i)/webhook(?:-test)?/[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]{8,}"),
     "ipv4 address": re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
     "possible table id": re.compile(r"\btbl[A-Za-z0-9]{8,}\b"),
+    "possible app id": re.compile(r"\bcli_[A-Za-z0-9]{8,}\b"),
+    "possible app key": re.compile(r"\bapp-[A-Za-z0-9]{12,}\b"),
+    "long opaque id": re.compile(r"\b[A-Za-z0-9_-]{32,}\b"),
 }
 
 
@@ -64,6 +72,34 @@ class Finding:
     message: str
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Offline n8n Outreach idempotency checker.")
+    parser.add_argument("workflow_json")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Return non-zero for WARN as well as FAIL, useful for CI gates.",
+    )
+    parser.add_argument(
+        "--required-node",
+        action="append",
+        default=None,
+        help="Required node name. Can be repeated. Defaults to public generic idempotency node names.",
+    )
+    parser.add_argument(
+        "--lock-gate-pattern",
+        default=DEFAULT_LOCK_GATE_PATTERN,
+        help="Regex used to find all native IF lock-confirmed gate nodes.",
+    )
+    parser.add_argument(
+        "--lock-attempt-node",
+        default=DEFAULT_LOCK_ATTEMPT_NODE,
+        help="Native IF node that decides whether to attempt the lock.",
+    )
+    return parser.parse_args()
+
+
 def load_workflow(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -75,7 +111,11 @@ def get_nodes(workflow: dict[str, Any]) -> dict[str, dict[str, Any]]:
     nodes = workflow.get("nodes")
     if not isinstance(nodes, list):
         raise ValueError("workflow JSON must include a nodes list")
-    return {node["name"]: node for node in nodes if isinstance(node, dict) and isinstance(node.get("name"), str)}
+    result: dict[str, dict[str, Any]] = {}
+    for node in nodes:
+        if isinstance(node, dict) and isinstance(node.get("name"), str):
+            result[node["name"]] = node
+    return result
 
 
 def build_edges(workflow: dict[str, Any]) -> list[Edge]:
@@ -131,7 +171,9 @@ def matches(name: str, patterns: list[re.Pattern[str]]) -> bool:
 def find_send_nodes(nodes: dict[str, dict[str, Any]]) -> list[str]:
     return [
         name for name, node in nodes.items()
-        if matches(name, SEND_PATTERNS) or "emailsend" in str(node.get("type", "")).lower() or "smtp" in str(node.get("type", "")).lower()
+        if matches(name, SEND_PATTERNS)
+        or "emailsend" in str(node.get("type", "")).lower()
+        or "smtp" in str(node.get("type", "")).lower()
     ]
 
 
@@ -139,85 +181,154 @@ def find_write_nodes(nodes: dict[str, dict[str, Any]]) -> list[str]:
     return [name for name in nodes if matches(name, WRITE_PATTERNS)]
 
 
-def true_edges(edges: list[Edge], source: str) -> list[Edge]:
-    return [edge for edge in edges if edge.source == source and edge.output_index == 0]
+def out_edges(edges: list[Edge], source: str, output_index: int | None = None) -> list[Edge]:
+    return [
+        edge for edge in edges
+        if edge.source == source and (output_index is None or edge.output_index == output_index)
+    ]
 
 
-def false_edges(edges: list[Edge], source: str) -> list[Edge]:
+def non_true_edges(edges: list[Edge], source: str) -> list[Edge]:
     return [edge for edge in edges if edge.source == source and edge.output_index != 0]
 
 
-def run_checks(workflow: dict[str, Any]) -> tuple[str, list[Finding], dict[str, Any]]:
+def is_native_if_node(node: dict[str, Any]) -> bool:
+    return str(node.get("type", "")) == NATIVE_IF_TYPE
+
+
+def find_lock_gates(nodes: dict[str, dict[str, Any]], pattern: str) -> list[str]:
+    compiled = re.compile(pattern)
+    return [name for name in nodes if compiled.search(name)]
+
+
+def check_sensitive_residue(workflow: dict[str, Any]) -> list[Finding]:
+    text = json.dumps(workflow, ensure_ascii=False, sort_keys=True)
+    findings: list[Finding] = []
+    for label, pattern in SENSITIVE_PATTERNS.items():
+        count = len(pattern.findall(text))
+        if count:
+            findings.append(Finding("WARN", f"Potential sensitive residue detected: {label} ({count} match(es)); values not printed."))
+    return findings
+
+
+def check_if_node_type(nodes: dict[str, dict[str, Any]], node_name: str, findings: list[Finding]) -> None:
+    node = nodes.get(node_name)
+    if not node:
+        return
+    if not is_native_if_node(node):
+        found = str(node.get("type", "<missing>"))
+        findings.append(Finding("FAIL", f"{node_name} must be a native n8n IF node ({NATIVE_IF_TYPE}); found type={found}"))
+
+
+def run_checks(
+    workflow: dict[str, Any],
+    required_nodes: list[str],
+    lock_gate_pattern: str,
+    lock_attempt_node: str,
+) -> tuple[str, list[Finding], dict[str, Any]]:
     nodes = get_nodes(workflow)
     edges = build_edges(workflow)
     starts = find_start_nodes(nodes, edges)
     sends = find_send_nodes(nodes)
     writes = find_write_nodes(nodes)
+    protected_targets = sorted(set(sends + writes))
     findings: list[Finding] = []
 
-    for required in REQUIRED_NODE_NAMES:
+    for required in required_nodes:
         if required not in nodes:
             findings.append(Finding("FAIL", f"Required node missing: {required}"))
+
+    if lock_attempt_node not in nodes:
+        findings.append(Finding("FAIL", f"Lock-attempt IF node missing: {lock_attempt_node}"))
+    else:
+        check_if_node_type(nodes, lock_attempt_node, findings)
+
+    lock_gates = find_lock_gates(nodes, lock_gate_pattern)
+    if not lock_gates:
+        findings.append(Finding("FAIL", f"No lock-confirmed IF gate matched pattern: {lock_gate_pattern}"))
+    for gate in lock_gates:
+        check_if_node_type(nodes, gate, findings)
 
     if not sends:
         findings.append(Finding("WARN", "No send-equivalent node detected; verify send path manually."))
     if not writes:
         findings.append(Finding("WARN", "No writeback/send-log node detected; verify writeback path manually."))
 
-    if "IF Lock Confirmed" in nodes:
-        t_edges = true_edges(edges, "IF Lock Confirmed")
-        f_edges = false_edges(edges, "IF Lock Confirmed")
-        if not t_edges:
-            findings.append(Finding("FAIL", "IF Lock Confirmed has no True/output-0 branch."))
-        if not f_edges:
-            findings.append(Finding("WARN", "IF Lock Confirmed has no explicit False/non-zero branch."))
-        true_reachable = reachable_from([edge.target for edge in t_edges], edges)
-        false_reachable = reachable_from([edge.target for edge in f_edges], edges)
-        bypass_reachable = reachable_from(starts, edges, {(edge.source, edge.target, edge.output_index) for edge in t_edges})
-        for send in sends:
-            if send not in true_reachable:
-                findings.append(Finding("FAIL", f"Send node is not reachable from IF Lock Confirmed True branch: {send}"))
-            if send in false_reachable:
-                findings.append(Finding("FAIL", f"Send node is reachable from IF Lock Confirmed False branch: {send}"))
-            if send in bypass_reachable:
-                findings.append(Finding("FAIL", f"Potential bypass reaches send without confirmed-lock True branch: {send}"))
+    all_gate_true_edges: list[Edge] = []
+    send_reachable_from_any_true: set[str] = set()
+    write_reachable_from_any_true: set[str] = set()
+
+    for gate in lock_gates:
+        gate_true_edges = out_edges(edges, gate, 0)
+        gate_false_edges = non_true_edges(edges, gate)
+        all_gate_true_edges.extend(gate_true_edges)
+
+        if not gate_true_edges:
+            findings.append(Finding("FAIL", f"{gate} has no True/output-0 branch."))
+        if not gate_false_edges:
+            findings.append(Finding("WARN", f"{gate} has no explicit False/non-zero branch."))
+
+        true_reachable = reachable_from([edge.target for edge in gate_true_edges], edges)
+        false_reachable = reachable_from([edge.target for edge in gate_false_edges], edges)
+        send_reachable_from_any_true.update(set(sends) & true_reachable)
+        write_reachable_from_any_true.update(set(writes) & true_reachable)
+
+        for target in protected_targets:
+            if target in false_reachable:
+                findings.append(Finding("FAIL", f"Protected node is reachable from {gate} False/non-true branch: {target}"))
+
+    true_edge_keys = {(edge.source, edge.target, edge.output_index) for edge in all_gate_true_edges}
+    bypass_reachable = reachable_from(starts, edges, true_edge_keys)
+    for send in sends:
+        if send not in send_reachable_from_any_true:
+            findings.append(Finding("FAIL", f"Send node is not reachable from any lock-confirmed True branch: {send}"))
+        if send in bypass_reachable:
+            findings.append(Finding("FAIL", f"Potential bypass reaches send without any confirmed-lock True branch: {send}"))
+    for write in writes:
+        if write in bypass_reachable:
+            findings.append(Finding("FAIL", f"Potential bypass reaches writeback without any confirmed-lock True branch: {write}"))
 
     if "No-op Response" in nodes:
         noop_reachable = reachable_from(["No-op Response"], edges)
-        for target in sorted(set(sends + writes) & noop_reachable):
+        for target in sorted(set(protected_targets) & noop_reachable):
             findings.append(Finding("FAIL", f"No-op Response can reach send/writeback node: {target}"))
     else:
         findings.append(Finding("FAIL", "No-op Response node missing."))
 
-    if "IF Should Attempt Lock" in nodes:
-        blocked = reachable_from([edge.target for edge in false_edges(edges, "IF Should Attempt Lock")], edges)
-        for send in sends:
-            if send in blocked:
-                findings.append(Finding("FAIL", f"IF Should Attempt Lock blocked branch can reach send node: {send}"))
-    else:
-        findings.append(Finding("FAIL", "IF Should Attempt Lock node missing."))
+    if lock_attempt_node in nodes:
+        blocked = reachable_from([edge.target for edge in non_true_edges(edges, lock_attempt_node)], edges)
+        for target in protected_targets:
+            if target in blocked:
+                findings.append(Finding("FAIL", f"{lock_attempt_node} blocked branch can reach protected node: {target}"))
 
-    text = json.dumps(workflow, ensure_ascii=False, sort_keys=True)
-    for label, pattern in SENSITIVE_PATTERNS.items():
-        count = len(pattern.findall(text))
-        if count:
-            findings.append(Finding("WARN", f"Potential sensitive residue detected: {label} ({count} match(es)); values not printed."))
+    findings.extend(check_sensitive_residue(workflow))
 
     fail_count = sum(1 for item in findings if item.level == "FAIL")
     warn_count = sum(1 for item in findings if item.level == "WARN")
     status = "FAIL" if fail_count else "WARN" if warn_count else "PASS"
-    details = {"node_count": len(nodes), "edge_count": len(edges), "send_nodes": sends, "write_nodes": writes, "fail_count": fail_count, "warn_count": warn_count}
+    details = {
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+        "send_nodes": sends,
+        "write_nodes": writes,
+        "lock_gates": lock_gates,
+        "fail_count": fail_count,
+        "warn_count": warn_count,
+    }
     return status, findings, details
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Offline n8n Outreach idempotency checker.")
-    parser.add_argument("workflow_json")
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args()
+    args = parse_args()
+    required_nodes = args.required_node or DEFAULT_REQUIRED_NODE_NAMES
 
     try:
-        status, findings, details = run_checks(load_workflow(Path(args.workflow_json)))
+        status, findings, details = run_checks(
+            load_workflow(Path(args.workflow_json)),
+            required_nodes,
+            args.lock_gate_pattern,
+            args.lock_attempt_node,
+        )
     except Exception as error:
         status = "FAIL"
         findings = [Finding("FAIL", f"Could not inspect workflow JSON: {error}")]
@@ -229,12 +340,15 @@ def main() -> int:
         print(status)
         if details:
             print(f"Nodes: {details['node_count']} | Edges: {details['edge_count']}")
+            print("Lock gates: " + (", ".join(details["lock_gates"]) if details["lock_gates"] else "<none detected>"))
             print("Send nodes: " + (", ".join(details["send_nodes"]) if details["send_nodes"] else "<none detected>"))
             print("Writeback nodes: " + (", ".join(details["write_nodes"]) if details["write_nodes"] else "<none detected>"))
         for finding in findings:
             print(f"{finding.level}: {finding.message}")
 
-    return 1 if status == "FAIL" else 0
+    if status == "FAIL" or (status == "WARN" and args.strict):
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
