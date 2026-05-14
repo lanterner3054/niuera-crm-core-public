@@ -42,20 +42,25 @@ Receive approval callback
 
 | Test case | Expected result | Result |
 |---|---|---|
-| First-email normal approve | Lock confirmed, dry-run send path runs once, writeback path continues | PASS |
-| Repeated first-email approve | Duplicate path reaches no-op; no send/writeback bypass | PASS |
-| Simulated lock confirmation failure | Lock false branch reaches no-op; no send/writeback | PASS |
-| Follow-up normal approve | Follow-up lock confirmed and dry-run send path runs | PASS |
-| Follow-up approve when record is already replied / terminal | Terminal state is blocked and routed to no-op | PASS |
+| First-email normal approve | Lock confirmed, dry-run send path runs once, writeback path continues | PASS (dry-run) |
+| Repeated first-email approve | Duplicate path reaches no-op; no send/writeback bypass | PASS (dry-run) |
+| Simulated lock confirmation failure | Lock false branch reaches no-op; no send/writeback | PASS (dry-run) |
+| Follow-up normal approve | Follow-up lock confirmed and dry-run send path runs | PASS (dry-run) |
+| Follow-up approve when record is already replied / terminal | Terminal state is blocked and routed to no-op | PASS (dry-run) |
 
 ## Not Yet Tested / Not Yet Released
 
 - Real SMTP send has not been confirmed as the final release path.
 - Production rollout has not started.
 - Active production workflow has not been modified.
+- Repeated follow-up callback idempotency should still be tested with dummy data before production rollout.
 - Full failure-path coverage for real email provider failure still needs a production-readiness review.
 - Post-send writeback failure reconciliation still needs a human-approved operating procedure before rollout.
 - Sanitized exported workflow JSON still requires sanitizer and structural checks before reviewer use.
+
+## Private Rollout Documentation Needed
+
+The public report intentionally avoids production implementation details. Before production rollout, private internal release notes should define the `Verify Lock` semantics, including whether the lock confirmation uses compare-and-set ownership, a safe attempt identifier, timestamp validation, or another approved source-system check.
 
 ## Release Gate Before Production
 
@@ -66,6 +71,7 @@ Production rollout should not proceed until all items below are satisfied:
 - Claude reviews only the public PR/diff or sanitized review pack.
 - A human approves importing only into an inactive n8n test workflow.
 - Dummy testing passes after import.
+- Repeated follow-up callback idempotency is tested with dummy data.
 - A human approves production rollout.
 - Production workflow backup/export is created under the normal release process.
 - Real SMTP behavior and failure handling are reviewed separately from the dry-run POC.
