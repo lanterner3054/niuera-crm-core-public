@@ -66,8 +66,11 @@ class CheckOutreachIdempotencyTests(ScriptTestCase):
     ) -> dict:
         nodes = [
             self.node("Start", "n8n-nodes-base.manualTrigger"),
+            self.node("Lock Decision", "n8n-nodes-base.code"),
             self.node("IF Should Attempt Lock", gate_type),
-            self.node("Acquire Lock", "n8n-nodes-base.httpRequest"),
+            self.node("Update record to sending", "n8n-nodes-base.httpRequest"),
+            self.node("Re-read record", "n8n-nodes-base.httpRequest"),
+            self.node("Verify Lock", "n8n-nodes-base.code"),
             self.node("IF Lock Confirmed", gate_type),
             self.node("Send Email", "n8n-nodes-base.emailSend"),
             self.node("Writeback Result", "n8n-nodes-base.httpRequest"),
@@ -77,14 +80,17 @@ class CheckOutreachIdempotencyTests(ScriptTestCase):
             nodes.append(self.node("IF Lock Confirmed Backup", "n8n-nodes-base.if"))
 
         connections = {
-            "Start": {"main": [[{"node": "IF Should Attempt Lock", "type": "main", "index": 0}]]},
+            "Start": {"main": [[{"node": "Lock Decision", "type": "main", "index": 0}]]},
+            "Lock Decision": {"main": [[{"node": "IF Should Attempt Lock", "type": "main", "index": 0}]]},
             "IF Should Attempt Lock": {
                 "main": [
-                    [{"node": "Acquire Lock", "type": "main", "index": 0}],
+                    [{"node": "Update record to sending", "type": "main", "index": 0}],
                     [{"node": "No-op Response", "type": "main", "index": 0}],
                 ]
             },
-            "Acquire Lock": {"main": [[{"node": "IF Lock Confirmed", "type": "main", "index": 0}]]},
+            "Update record to sending": {"main": [[{"node": "Re-read record", "type": "main", "index": 0}]]},
+            "Re-read record": {"main": [[{"node": "Verify Lock", "type": "main", "index": 0}]]},
+            "Verify Lock": {"main": [[{"node": "IF Lock Confirmed", "type": "main", "index": 0}]]},
             "IF Lock Confirmed": {"main": [[], [{"node": "No-op Response", "type": "main", "index": 0}]]},
             "Send Email": {"main": [[{"node": "Writeback Result", "type": "main", "index": 0}]]},
             "Writeback Result": {"main": [[]]},
@@ -95,7 +101,7 @@ class CheckOutreachIdempotencyTests(ScriptTestCase):
                 {"node": "Send Email", "type": "main", "index": 0}
             )
         else:
-            connections["Acquire Lock"]["main"][0].append(
+            connections["Re-read record"]["main"][0].append(
                 {"node": "Send Email", "type": "main", "index": 0}
             )
         if additional_gate:
@@ -113,8 +119,8 @@ class CheckOutreachIdempotencyTests(ScriptTestCase):
         if residue:
             parameters.update(
                 {
-                    "token": "dummy-token-public-fixture",
-                    "webhookUrl": "dummy-webhook.example.invalid/path/REDACTED",
+                    "authorization": "Bearer dummy-token-public-fixture",
+                    "webhookPath": "/webhook/REDACTED-public-fixture-path",
                     "ownerEmail": "reviewer@example.invalid",
                 }
             )
@@ -158,7 +164,7 @@ class CheckOutreachIdempotencyTests(ScriptTestCase):
         self.assertIn("token", combined.lower())
         self.assertIn("webhook", combined.lower())
         self.assertNotIn("dummy-token-public-fixture", combined)
-        self.assertNotIn("dummy-webhook.example.invalid/path/REDACTED", combined)
+        self.assertNotIn("/webhook/REDACTED-public-fixture-path", combined)
         self.assertNotIn("reviewer@example.invalid", combined)
 
     def test_strict_returns_nonzero_when_warnings_exist(self) -> None:
@@ -182,14 +188,14 @@ class SanitizeN8nWorkflowTests(ScriptTestCase):
         self.assertNotIn("credentials", node)
         serialized = json.dumps(sanitized, sort_keys=True)
         for raw_value in (
-            "dummy-token-public-fixture",
-            "dummy-webhook.example.invalid/path/REDACTED",
+            "Bearer dummy-token-public-fixture",
+            "https://example.invalid/webhook/REDACTED-public-fixture-path",
             "reviewer@example.invalid",
             "192.0.2.10",
-            "tbl_dummy_public_fixture",
-            "cli_dummy_public_fixture",
-            "key_dummy_public_fixture",
-            "rec_dummy_public_fixture",
+            "tblDummyPublicFixture123",
+            "cli_DummyPublicFixture123",
+            "app-DummyPublicFixture123",
+            "dummyopaqueidentifier12345678901234567890",
             "Example Fixture Customer",
             "Example Fixture Contact",
             "Public fixture payload",
@@ -199,7 +205,7 @@ class SanitizeN8nWorkflowTests(ScriptTestCase):
 
     def test_aggregate_summary_hides_redacted_key_names(self) -> None:
         result = self.run_cli("--summary-format", "aggregate", "--check", str(FAKE_RESIDUE_FIXTURE))
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         combined = result.stdout + result.stderr
         self.assertIn("redacted", combined.lower())
         for key_name in ("webhookUrl", "ownerEmail", "serverIp", "tableId", "appId", "appKey", "opaqueId"):
@@ -212,13 +218,13 @@ class SanitizeN8nWorkflowTests(ScriptTestCase):
 
     def test_normal_summary_does_not_print_complete_secret_values(self) -> None:
         result = self.run_cli("--check", str(FAKE_RESIDUE_FIXTURE))
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         combined = result.stdout + result.stderr
         for raw_value in (
-            "dummy-token-public-fixture",
-            "dummy-webhook.example.invalid/path/REDACTED",
+            "Bearer dummy-token-public-fixture",
+            "https://example.invalid/webhook/REDACTED-public-fixture-path",
             "reviewer@example.invalid",
-            "tbl_dummy_public_fixture",
+            "tblDummyPublicFixture123",
             "Example Fixture Customer",
         ):
             self.assertNotIn(raw_value, combined)
