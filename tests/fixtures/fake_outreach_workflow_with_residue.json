@@ -1,0 +1,84 @@
+{
+  "name": "Fake Outreach Review Fixture",
+  "id": "dummy-workflow-id",
+  "credentials": {
+    "fakeCredential": {
+      "id": "dummy-credential-id",
+      "name": "REDACTED"
+    }
+  },
+  "nodes": [
+    {
+      "id": "node-start-dummy",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "parameters": {
+        "webhookUrl": "dummy-webhook.example.invalid/path/REDACTED",
+        "ownerEmail": "reviewer@example.invalid",
+        "serverIp": "192.0.2.10",
+        "tableId": "tbl_dummy_public_fixture",
+        "appId": "cli_dummy_public_fixture",
+        "appKey": "key_dummy_public_fixture",
+        "opaqueId": "rec_dummy_public_fixture",
+        "customerName": "Example Fixture Customer",
+        "contactName": "Example Fixture Contact",
+        "payload": {
+          "subject": "Public fixture payload",
+          "body": "REDACTED"
+        },
+        "token": "dummy-token-public-fixture"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "dummy-node-credential-id",
+          "name": "REDACTED"
+        }
+      }
+    }
+  ],
+  "connections": {},
+  "pinData": {
+    "Manual Trigger": [
+      {
+        "json": {
+          "email": "fixture-contact@example.invalid"
+        },
+        "binary": {
+          "attachment": {
+            "data": "REDACTED"
+          }
+        }
+      }
+    ]
+  },
+  "staticData": {
+    "lastExecution": "dummy-static-runtime-state"
+  },
+  "runtimeData": {
+    "lastNodeExecuted": "Manual Trigger"
+  },
+  "executionData": {
+    "resultData": {
+      "runData": {
+        "Manual Trigger": [
+          {
+            "data": {
+              "main": [
+                [
+                  {
+                    "json": {
+                      "customer": "Example Fixture Customer"
+                    }
+                  }
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "binaryData": {
+    "dummy": "REDACTED"
+  }
+}
