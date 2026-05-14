@@ -4,6 +4,9 @@
 Public sanitized version. It reads a local JSON file, removes credential and
 execution-data fields, redacts sensitive-looking keys and strings, and writes a
 sanitized JSON file. It never prints matched secret values.
+
+Sanitized JSON is intended for human/AI review and offline structural checks, not
+for direct production import.
 """
 
 from __future__ import annotations
@@ -43,10 +46,12 @@ SENSITIVE_KEY_MARKERS = (
     "customer", "client", "prospect",
 )
 
+# Keep workflow and node names readable for graph review/checker use. Do not
+# include bare "name" here; only redact more specific customer/contact names.
 CUSTOMER_LIKE_KEYS = {
-    "company", "company_name", "contact_name", "name", "first_name",
-    "last_name", "subject", "text", "html", "email_subject",
-    "email_draft", "research_summary", "reply_summary",
+    "company", "company_name", "customer_name", "client_name", "prospect_name",
+    "contact_name", "first_name", "last_name", "subject", "text", "html",
+    "email_subject", "email_draft", "research_summary", "reply_summary",
 }
 
 STRING_REPLACEMENTS: tuple[tuple[str, re.Pattern[str], str], ...] = (
@@ -70,6 +75,23 @@ class SanitizeStats:
 
     def bump(self, bucket: dict[str, int], key: str, count: int = 1) -> None:
         bucket[key] = bucket.get(key, 0) + count
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Sanitize a local exported n8n workflow JSON file.")
+    parser.add_argument("input")
+    parser.add_argument("output", nargs="?")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--stdout", action="store_true")
+    mode.add_argument("--check", action="store_true", help="Sanitize in memory and print summary only.")
+    parser.add_argument("--fail-on-sensitive", action="store_true")
+    parser.add_argument(
+        "--summary-format",
+        choices=("keys", "aggregate"),
+        default="keys",
+        help="Use aggregate to avoid printing redacted key names in summaries.",
+    )
+    return parser.parse_args()
 
 
 def normalize_key(key: str) -> str:
@@ -124,11 +146,18 @@ def sanitize_value(value: Any, stats: SanitizeStats) -> Any:
     return copy.deepcopy(value)
 
 
-def print_summary(stats: SanitizeStats) -> None:
+def print_summary(stats: SanitizeStats, summary_format: str) -> None:
     print("Sanitization summary:")
     if not (stats.dropped_keys or stats.redacted_keys or stats.string_replacements):
         print("- No sensitive markers detected by sanitizer rules.")
         return
+
+    if summary_format == "aggregate":
+        print(f"- Dropped key count: {sum(stats.dropped_keys.values())}")
+        print(f"- Redacted key count: {sum(stats.redacted_keys.values())}")
+        print(f"- String replacement count: {sum(stats.string_replacements.values())}")
+        return
+
     for label, values in (("Dropped keys", stats.dropped_keys), ("Redacted keys", stats.redacted_keys), ("String replacements", stats.string_replacements)):
         if values:
             print(f"- {label}:")
@@ -137,13 +166,7 @@ def print_summary(stats: SanitizeStats) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Sanitize a local exported n8n workflow JSON file.")
-    parser.add_argument("input")
-    parser.add_argument("output", nargs="?")
-    parser.add_argument("--stdout", action="store_true")
-    parser.add_argument("--check", action="store_true", help="Sanitize in memory and print summary only.")
-    parser.add_argument("--fail-on-sensitive", action="store_true")
-    args = parser.parse_args()
+    args = parse_args()
 
     if not args.stdout and not args.check and not args.output:
         print("Output path is required unless --stdout or --check is used.", file=sys.stderr)
@@ -168,13 +191,13 @@ def main() -> int:
     if args.stdout:
         sys.stdout.write(output_text)
     elif args.check:
-        print_summary(stats)
+        print_summary(stats, args.summary_format)
     else:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(output_text, encoding="utf-8")
         print(f"Wrote sanitized workflow JSON: {output_path}")
-        print_summary(stats)
+        print_summary(stats, args.summary_format)
 
     return 1 if args.fail_on_sensitive and sensitive_count else 0
 
