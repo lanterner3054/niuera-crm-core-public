@@ -1,0 +1,84 @@
+{
+  "name": "Fake Outreach Review Fixture",
+  "id": "dummy-workflow-id",
+  "credentials": {
+    "fakeCredential": {
+      "id": "dummy-credential-id",
+      "name": "REDACTED"
+    }
+  },
+  "nodes": [
+    {
+      "id": "node-start-dummy",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "parameters": {
+        "webhookUrl": "https://example.invalid/webhook/REDACTED-public-fixture-path",
+        "ownerEmail": "reviewer@example.invalid",
+        "serverIp": "192.0.2.10",
+        "tableId": "tblDummyPublicFixture123",
+        "appId": "cli_DummyPublicFixture123",
+        "appKey": "app-DummyPublicFixture123",
+        "opaqueId": "dummyopaqueidentifier12345678901234567890",
+        "customerName": "Example Fixture Customer",
+        "contactName": "Example Fixture Contact",
+        "payload": {
+          "subject": "Public fixture payload",
+          "body": "REDACTED"
+        },
+        "authorization": "Bearer dummy-token-public-fixture"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "dummy-node-credential-id",
+          "name": "REDACTED"
+        }
+      }
+    }
+  ],
+  "connections": {},
+  "pinData": {
+    "Manual Trigger": [
+      {
+        "json": {
+          "email": "fixture-contact@example.invalid"
+        },
+        "binary": {
+          "attachment": {
+            "data": "REDACTED"
+          }
+        }
+      }
+    ]
+  },
+  "staticData": {
+    "lastExecution": "dummy-static-runtime-state"
+  },
+  "runtimeData": {
+    "lastNodeExecuted": "Manual Trigger"
+  },
+  "executionData": {
+    "resultData": {
+      "runData": {
+        "Manual Trigger": [
+          {
+            "data": {
+              "main": [
+                [
+                  {
+                    "json": {
+                      "customer": "Example Fixture Customer"
+                    }
+                  }
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "binaryData": {
+    "dummy": "REDACTED"
+  }
+}
