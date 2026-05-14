@@ -40,7 +40,7 @@ SEND_PATTERNS = [
 
 WRITE_PATTERNS = [
     re.compile(r"写入发送记录", re.I),
-    re.compile(r"update.*record.*sending", re.I),
+    re.compile(r"\bwriteback\b", re.I),
     re.compile(r"update.*company.*status", re.I),
     re.compile(r"update.*contact.*status", re.I),
     re.compile(r"update.*status", re.I),
